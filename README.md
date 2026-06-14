@@ -9,23 +9,23 @@ Displays air quality data from LED IAQ Monitor in a single card with color-coded
 - AQI status with color-coded header (Excellent → Hazardous)
 - CO₂, PM2.5, PM10, PM1.0, TVOC with threshold-based progress bars
 - Temperature and humidity in footer
+- Auto-detection of IAQ Monitor device
 - Dark and light theme support
-- Auto-updates every 30 seconds
 
 ## Installation
 
 ### HACS (recommended)
 
 1. Open HACS in Home Assistant
-2. Go to **Frontend** → three dots → **Custom repositories**
-3. Add repository URL: `https://github.com/smartnmagic/iaq-monitor-card`
-4. Category: **Plugin**
+2. Three dots menu → **Custom repositories**
+3. Add repository URL: `https://github.com/smartnmagic/led-iaq-monitor-cards`
+4. Category: **Dashboard**
 5. Click **Add** → find "LED IAQ Monitor Card" → **Install**
-6. Restart Home Assistant
+6. Refresh Home Assistant page
 
 ### Manual
 
-1. Download `iaq-monitor-card.js` from the [latest release](https://github.com/smartnmagic/iaq-monitor-card/releases)
+1. Download `iaq-monitor-card.js` from the [latest release](https://github.com/smartnmagic/led-iaq-monitor-cards/releases)
 2. Copy to `/config/www/iaq-monitor-card.js`
 3. Add resource: **Settings** → **Dashboards** → **Resources** → **Add**
    - URL: `/local/iaq-monitor-card.js`
@@ -37,12 +37,12 @@ Add the card to your dashboard:
 
 ```yaml
 type: custom:iaq-monitor-card
-device_id: iaqmonitor_b7a8
 ```
 
 | Option | Required | Description |
 |--------|----------|-------------|
-| `device_id` | Yes | Device hostname with `-` replaced by `_` (visible in device page URL) |
+| `device_id` | No | Auto-detected. Only needed if you have multiple IAQ Monitors |
+| `temp_unit` | No | Temperature unit display (default: °C) |
 
 ## Thresholds
 
