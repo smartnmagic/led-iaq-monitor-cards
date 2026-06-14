@@ -2,13 +2,16 @@
  * IAQ Monitor Card for Home Assistant
  * Custom Lovelace card for LED IAQ Monitor by Smart'n'Magic
  *
- * Installation:
- *   1. Copy to /config/www/iaq-monitor-card.js in HA
- *   2. Add resource: Settings → Dashboards → Resources →
- *      URL: /local/iaq-monitor-card.js, Type: JavaScript Module
- *   3. Add card to dashboard with config:
- *      type: custom:iaq-monitor-card
- *      device_id: iaqmonitor_b7a8
+ * Installation via HACS:
+ *   1. HACS → Frontend → Custom repositories
+ *   2. Add: https://github.com/smartnmagic/led-iaq-monitor-cards
+ *   3. Install "LED IAQ Monitor Card"
+ *
+ * Usage — add to dashboard:
+ *   type: custom:iaq-monitor-card
+ *
+ * Optional config:
+ *   device_id: iaqmonitor_b7a8   # only needed if multiple IAQ Monitors
  */
 
 const AQI_LEVELS = [
@@ -19,16 +22,16 @@ const AQI_LEVELS = [
   { max: 5, label: 'Hazardous', color: '#ef4444', bg: '#fef2f2' },
 ];
 
-const METRICS = [
-  { key: 'co2',  name: 'CO₂',   unit: 'ppm',   icon: 'mdi:molecule-co2',
+const METRIC_SUFFIXES = [
+  { suffix: 'co2',  name: 'CO₂',   unit: 'ppm',   icon: 'mdi:molecule-co2',
     thresholds: [600, 800, 1000, 1500] },
-  { key: 'pm25', name: 'PM2.5', unit: 'µg/m³', icon: 'mdi:blur',
+  { suffix: 'pm25', name: 'PM2.5', unit: 'µg/m³', icon: 'mdi:blur',
     thresholds: [5, 15, 25, 50] },
-  { key: 'pm10', name: 'PM10',  unit: 'µg/m³', icon: 'mdi:blur-linear',
+  { suffix: 'pm10', name: 'PM10',  unit: 'µg/m³', icon: 'mdi:blur-linear',
     thresholds: [15, 45, 75, 150] },
-  { key: 'pm1',  name: 'PM1.0', unit: 'µg/m³', icon: 'mdi:blur-radial',
+  { suffix: 'pm1',  name: 'PM1.0', unit: 'µg/m³', icon: 'mdi:blur-radial',
     thresholds: [5, 15, 25, 50] },
-  { key: 'tvoc', name: 'TVOC',  unit: 'ppb',   icon: 'mdi:air-filter',
+  { suffix: 'tvoc', name: 'TVOC',  unit: 'ppb',   icon: 'mdi:air-filter',
     thresholds: [100, 300, 500, 1000] },
 ];
 
@@ -48,40 +51,66 @@ function getBarPercent(value, thresholds) {
 
 class IaqMonitorCard extends HTMLElement {
   setConfig(config) {
-    if (!config.device_id) {
-      throw new Error('Please define device_id (e.g. iaqmonitor_b7a8)');
-    }
-    this._config = config;
+    this._config = config || {};
+    this._deviceId = null;
     this._rendered = false;
   }
 
   static getStubConfig() {
-    return { device_id: 'iaqmonitor_b7a8' };
+    return {};
   }
 
   set hass(hass) {
     this._hass = hass;
-    this._render();
+    if (!this._deviceId) {
+      this._deviceId = this._detectDevice();
+    }
+    if (this._deviceId) {
+      this._render();
+    } else {
+      this._renderError();
+    }
   }
 
-  _getState(suffix) {
-    const id = `sensor.iaq_${this._config.device_id}_${suffix}`;
-    const s = this._hass.states[id];
-    return s ? s.state : null;
+  _detectDevice() {
+    // If device_id is configured, use it
+    if (this._config.device_id) {
+      return this._config.device_id;
+    }
+    // Auto-detect: find first entity matching sensor.iaq_*_aqi
+    const aqiEntity = Object.keys(this._hass.states)
+      .find(id => id.match(/^sensor\.iaq_.*_aqi$/));
+    if (aqiEntity) {
+      // Extract device_id: sensor.iaq_DEVICEID_aqi → DEVICEID
+      const match = aqiEntity.match(/^sensor\.iaq_(.+)_aqi$/);
+      return match ? match[1] : null;
+    }
+    return null;
   }
 
   _getNumeric(suffix) {
-    const v = this._getState(suffix);
-    return v !== null && v !== 'unavailable' && v !== 'unknown'
-      ? parseFloat(v) : null;
+    const id = `sensor.iaq_${this._deviceId}_${suffix}`;
+    const s = this._hass.states[id];
+    if (!s || s.state === 'unavailable' || s.state === 'unknown') return null;
+    return parseFloat(s.state);
+  }
+
+  _renderError() {
+    this.innerHTML = `
+      <ha-card>
+        <div style="padding:16px;color:var(--error-color)">
+          IAQ Monitor not found. Check MQTT connection or set device_id manually.
+        </div>
+      </ha-card>`;
   }
 
   _render() {
-    if (!this._hass || !this._config) return;
+    if (!this._hass || !this._deviceId) return;
 
     const aqi = this._getNumeric('aqi');
     const temp = this._getNumeric('temperature');
     const hum = this._getNumeric('humidity');
+    const tempUnit = this._config.temp_unit || '°C';
 
     const aqiIdx = aqi !== null ? Math.min(Math.max(Math.round(aqi) - 1, 0), 4) : 0;
     const aqiLevel = AQI_LEVELS[aqiIdx];
@@ -93,8 +122,8 @@ class IaqMonitorCard extends HTMLElement {
         .getPropertyValue('--primary-text-color')?.trim()?.startsWith('rgb(255');
 
     let metricsHtml = '';
-    for (const m of METRICS) {
-      const val = this._getNumeric(m.key);
+    for (const m of METRIC_SUFFIXES) {
+      const val = this._getNumeric(m.suffix);
       if (val === null) continue;
       const lvl = getLevel(val, m.thresholds);
       const color = COLORS[Math.min(lvl, 4)];
@@ -120,7 +149,7 @@ class IaqMonitorCard extends HTMLElement {
             align-items: center;
             justify-content: space-between;
             padding: 16px 16px 12px;
-            border-radius: 12px 12px 0 0;
+            border-radius: var(--ha-card-border-radius, 12px) var(--ha-card-border-radius, 12px) 0 0;
             background: ${dark ? this._darken(aqiLevel.color) : aqiLevel.bg};
           }
           .iaq-status {
@@ -218,7 +247,7 @@ class IaqMonitorCard extends HTMLElement {
           <div class="iaq-footer-item">
             <ha-icon icon="mdi:thermometer" style="--mdc-icon-size:20px;color:var(--secondary-text-color)"></ha-icon>
             <span class="iaq-footer-value">${temp !== null ? temp : '—'}</span>
-            <span class="iaq-footer-unit">°C</span>
+            <span class="iaq-footer-unit">${tempUnit}</span>
           </div>
           <div class="iaq-footer-item">
             <ha-icon icon="mdi:water-percent" style="--mdc-icon-size:20px;color:var(--secondary-text-color)"></ha-icon>
@@ -230,7 +259,6 @@ class IaqMonitorCard extends HTMLElement {
   }
 
   _darken(color) {
-    // Convert hex to rgba with low opacity for dark theme backgrounds
     const r = parseInt(color.slice(1, 3), 16);
     const g = parseInt(color.slice(3, 5), 16);
     const b = parseInt(color.slice(5, 7), 16);
@@ -249,4 +277,5 @@ window.customCards.push({
   type: 'iaq-monitor-card',
   name: 'IAQ Monitor Card',
   description: 'Air quality card for LED IAQ Monitor by Smart\'n\'Magic',
+  preview: true,
 });
